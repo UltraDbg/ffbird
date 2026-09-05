@@ -5,7 +5,14 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Placeholder — real Bionic libm will be SHARED from bionic/libm/*.c
+# Placeholder — real Bionic libm (msun 298) is vendored in bionic/libm
+# Building real msun requires Android build system (Android.bp + Bionic headers)
+# For now, keep stub that provides version script path for verification
+# Future: integrate via bionic/CMakeLists.txt that builds bionic_m_real SHARED
+if(EXISTS "${CMAKE_SOURCE_DIR}/bionic/libm/libm.map.txt")
+    message(STATUS "bionic-libm: Bionic vendored (recent AOSP) found at bionic/libm — stub for now, real build via bionic/CMakeLists.txt")
+endif()
+
 add_library(bionic-libm STATIC include/bionic_libm/libm.h src/stub.cpp)
 target_include_directories(bionic-libm PUBLIC include/)
 target_link_libraries(bionic-libm PUBLIC utils)
