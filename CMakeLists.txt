@@ -119,6 +119,14 @@ add_subdirectory(logger)
 add_subdirectory(file-util)
 add_subdirectory(argparser)
 add_subdirectory(anticrash)
+add_subdirectory(bionic)
+add_subdirectory(hybris)
+add_subdirectory(ulinker)
+add_subdirectory(hybris-bridge)
+add_subdirectory(bionic-libm)
+add_subdirectory(bionic-libc)
+add_subdirectory(bionic-libdl)
+add_subdirectory(shims/liblog-shim)
 
 # Stubs — each proves module layout on Linux
 if(EXISTS "${CMAKE_SOURCE_DIR}/platform-linux/CMakeLists.txt")
@@ -154,24 +162,46 @@ if(FFBIRD_BUILD_NATIVES)
         # Build natives as ExternalProject or via add_subdirectory with toolchain would require re-configure.
         # We use ExternalProject_Add to keep host and NDK toolchains separate.
         include(ExternalProject)
-        ExternalProject_Add(natives_print_test
+        ExternalProject_Add(natives_print_test_arm64
             SOURCE_DIR "${CMAKE_SOURCE_DIR}/natives"
-            BINARY_DIR "${CMAKE_BINARY_DIR}/natives_build"
+            BINARY_DIR "${CMAKE_BINARY_DIR}/natives_build_arm64"
             CMAKE_ARGS
                 -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake
                 -DANDROID_ABI=arm64-v8a
                 -DANDROID_PLATFORM=android-21
                 -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-                -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/lib_android
-                -DCMAKE_LIBRARY_OUTPUT_DIRECTORY_DEBUG=${CMAKE_BINARY_DIR}/lib_android
-                -DCMAKE_LIBRARY_OUTPUT_DIRECTORY_RELEASE=${CMAKE_BINARY_DIR}/lib_android
-                -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/lib_android
-                -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/lib_android
+                -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/lib_android/arm64-v8a
+                -DCMAKE_LIBRARY_OUTPUT_DIRECTORY_DEBUG=${CMAKE_BINARY_DIR}/lib_android/arm64-v8a
+                -DCMAKE_LIBRARY_OUTPUT_DIRECTORY_RELEASE=${CMAKE_BINARY_DIR}/lib_android/arm64-v8a
+                -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/lib_android/arm64-v8a
+                -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/lib_android/arm64-v8a
+            INSTALL_COMMAND ""
+            BUILD_ALWAYS TRUE
+        )
+        ExternalProject_Add(natives_print_test_x86_64
+            SOURCE_DIR "${CMAKE_SOURCE_DIR}/natives"
+            BINARY_DIR "${CMAKE_BINARY_DIR}/natives_build_x86_64"
+            CMAKE_ARGS
+                -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake
+                -DANDROID_ABI=x86_64
+                -DANDROID_PLATFORM=android-21
+                -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+                -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/lib_android/x86_64
+                -DCMAKE_LIBRARY_OUTPUT_DIRECTORY_DEBUG=${CMAKE_BINARY_DIR}/lib_android/x86_64
+                -DCMAKE_LIBRARY_OUTPUT_DIRECTORY_RELEASE=${CMAKE_BINARY_DIR}/lib_android/x86_64
+                -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/lib_android/x86_64
+                -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/lib_android/x86_64
             INSTALL_COMMAND ""
             BUILD_ALWAYS TRUE
         )
         # Ensure built as part of default 'all' target
-        add_custom_target(natives_all ALL DEPENDS natives_print_test)
+        add_custom_target(natives_all ALL DEPENDS natives_print_test_arm64 natives_print_test_x86_64)
+        # Host inspection: also copy x86_64 libs to lib_android root for ctest
+        add_custom_command(TARGET natives_all POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/lib_android
+            COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/lib_android/x86_64 ${CMAKE_BINARY_DIR}/lib_android
+            COMMENT "Copy x86_64 natives to lib_android for host inspection"
+        )
     else()
         message(WARNING "FFBIRD_BUILD_NATIVES=ON but ANDROID_NDK not found at ${ANDROID_NDK} — skipping natives")
     endif()

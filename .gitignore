@@ -64,3 +64,19 @@ Thumbs.db
 # (keep CMakeModules allowed via !CMake/*.cmake)
 # Ext dependencies fetch
 ext/build/
+
+# Large vendored AOSP Bionic and libhybris — vendored sources ignored, keep build scripts and rev markers
+/bionic/*
+!/bionic/README.FFBIRD.md
+!/bionic/CMakeLists.txt
+!/bionic/.aosp_rev
+!/bionic/.aosp_desc
+!/bionic/.aosp_log
+!/bionic/linker_compat.cpp
+!/bionic/linker_compat.h
+/hybris/*
+!/hybris/README.FFBIRD.md
+!/hybris/CMakeLists.txt
+!/hybris/.hybris_rev
+!/hybris/hybris_shim.cpp
+!/hybris/hybris_compat_stub.c
