@@ -14,6 +14,8 @@ extern void* __loader_dlopen(const char* filename, int flags, const void* caller
 extern int __loader_dl_iterate_phdr(int (*cb)(struct dl_phdr_info* info, size_t size, void* data), void* data);
 extern void __loader_android_update_LD_LIBRARY_PATH(const char* p);
 extern void __loader_android_get_LD_LIBRARY_PATH(char* buffer, size_t buffer_size);
+// Future real Bionic would expose soinfo::load_library and soinfo_from_handle
+// Currently bionic-linker is a stub (linker_compat.cpp) wrapping host dlopen, so wiring is ready but stub.
 }
 #endif
 
@@ -129,6 +131,23 @@ utils::Result<void*> loadLibrary(const char* soname,
             return utils::Result<void*>::success(h);
         }
     }
+#ifdef ULINKER_HAS_BIONIC
+    // Real Bionic path — future will call soinfo::load_library / soinfo_from_handle.
+    // Currently bionic-linker is stub (linker_compat.cpp) so we try __loader_dlopen as wiring check,
+    // but keep host fallback honest when real soinfo not available.
+    // Keep for wiring readiness: if real soinfo existed, this would be: soinfo* s = soinfo::load_library(soname); return soinfo_from_handle
+    void* bionic_handle = __loader_dlopen(soname, RTLD_NOW, __builtin_return_address(0));
+    if (bionic_handle) {
+        std::lock_guard<std::mutex> lk(g_mu);
+        g_sonameToHandle[soname] = bionic_handle;
+        g_sonameMap[bionic_handle] = soname;
+        g_extraMap[bionic_handle] = extraSymbols;
+        return utils::Result<void*>::success(bionic_handle);
+    }
+    // fall through to host stub if Bionic loader fails (expected for host stub)
+#endif
+    // host fallback — honest stub: create synthetic handle via hash(soname) ^ &dummy
+    // This is not real Bionic soinfo; it just represents the SONAME for testing.
     void* placeholder = ::dlopen(nullptr, RTLD_LAZY);
     if (!placeholder) placeholder = reinterpret_cast<void*>(0x1);
     static int dummy;
@@ -171,6 +190,7 @@ utils::Result<size_t> getLibraryBase(void* handle) noexcept {
     if (data.found) return utils::Result<size_t>::success(data.base);
     std::lock_guard<std::mutex> lk(g_mu);
     if (g_sonameMap.find(handle) != g_sonameMap.end()) {
+        // stub — real Bionic will scan PT_LOAD
         return utils::Result<size_t>::success(reinterpret_cast<size_t>(handle) & ~0xFFF);
     }
     return utils::Result<size_t>::failure("getLibraryBase: unknown handle");
