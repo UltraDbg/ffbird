@@ -1,0 +1,7 @@
+# header only argument parser
+cmake_minimum_required (VERSION 2.6...4.0.0)
+
+project(argparser LANGUAGES CXX)
+
+add_library(argparser INTERFACE)
+target_include_directories(argparser INTERFACE include/)

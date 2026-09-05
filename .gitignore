@@ -1,0 +1,66 @@
+
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# Compiled outputs
+/flbird
+/flbird.exe
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMake/*.cmake
+!CMakeLists.txt
+compile_commands.json
+CTestTestfile.cmake
+_CPack_Packages/
+CPackConfig.cmake
+CPackSourceConfig.cmake
+*.pc
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.clangd/
+.cache/
+.vs/
+
+# Test output
+Testing/
+*.gcda
+*.gcno
+*.gcov
+
+# Local caches
+.ccache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keep proprietary extraction but ignore local overrides
+# (APKs/ and Assets/ are intentionally tracked if needed, so not ignored)
+#APKs
+#References
+#Assets
+#*.so.*
+
+# ffbird skeleton specifics
+# (keep CMakeModules allowed via !CMake/*.cmake)
+# Ext dependencies fetch
+ext/build/
