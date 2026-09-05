@@ -288,7 +288,107 @@ Alternatively, build `bionic/` directly as `bionic-lib*` — keep as either top 
 
 ---
 
-## 9. How we intend to code it properly
+## 9. Testing methodology — NDK/SDK generated libs for real Bionic vs host
+
+This is how we prove `ulinker` + `hybris-bridge` + real `bionic-libm` work without guessing. Every `DT_NEEDED` is a test artifact built with the **same NDK/SDK the runtime will see in the wild**, not a host `gcc` stub.
+
+### 9.1 Toolchain — which NDK/SDK and how it is invoked
+
+* **System NDK:** `/home/clickpaw/Android/Sdk/ndk/30.0.16138531` (`r30-beta3`, `android.toolchain.cmake` at `build/cmake/android.toolchain.cmake`, prebuilts `toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang` etc., platform `android-37.0` available). Top-level `CMakeLists.txt` already respects `ANDROID_NDK` env override and defaults to that path — keep it. Source: `mcpelauncher-linker` and `ffbird` foundations `FFBIRD_BUILD_NATIVES` `ExternalProject_Add` with `CMAKE_TOOLCHAIN_FILE`, `ANDROID_ABI=arm64-v8a`, `ANDROID_PLATFORM=android-21`. Keep default `arm64-v8a` + `android-21` (minimum for `__android_log_print`) and add `x86_64` for host `qemu` runs.
+
+* **Invocation for natives:** same as `natives/print_test` today:
+
+```cmake
+# top-level CMakeLists.txt — natives as isolated toolchain build
+include(ExternalProject)
+ExternalProject_Add(natives_print_test
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/natives"
+  BINARY_DIR "${CMAKE_BINARY_DIR}/natives_build"
+  CMAKE_ARGS
+    -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake
+    -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-21 -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+    -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/lib_android
+  INSTALL_COMMAND "" BUILD_ALWAYS TRUE)
+add_custom_target(natives_all ALL DEPENDS natives_print_test)
+```
+
+`natives/CMakeLists.txt` is a **separate CMake project** built with that toolchain. It must set `CMAKE_LIBRARY_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/lib_android` when `ANDROID_ABI` is set, so `build/debug/lib_android/libprint_test.so` is the artifact, not `natives_build/libprint_test.so`. Already done for `print_test` — reuse for every Bionic test lib below. Do **not** use `ndk-build` (`Android.mk`) — keep CMake-only to stay testable via `compile_commands.json`.
+
+* **SDK tools for verification (not building):** `llvm-readelf`, `llvm-nm`, `llvm-objdump` from the same NDK prebuilt (`toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf`) + host `readelf --dyn-syms --verneed --verdef -d` + `nm -D`. Use them in tests to assert `DT_NEEDED`, `DT_VERNEED LIBC`, `DT_SONAME`, and `T print_test_hello` / `U __android_log_print`.
+
+### 9.2 What we generate with NDK vs what we bundle from real Bionic
+
+* **Bundled from real AOSP Bionic (host-built, `C17/C++17`):** `bionic/linker` `STATIC`, `bionic/libm` 216 `msun` + `libm.map.txt` 298, `bionic/libc` `libc.map.txt`, `bionic/libdl` — these are built **once** via host `gcc 16.2.1` with `bionic/` sources, not via NDK. They are the `LIBC` `DT_SONAME libm.so` that Bionic binaries see.
+
+* **Generated via NDK (Bionic ABI fixtures):** every `natives/<name>/` is a **Bionic** `SHARED` built with `android.toolchain.cmake` (`arm64-v8a` + `x86_64` both where feasible) that exercises a specific `DT_NEEDED` edge:
+
+```
+natives/
+├── print_test/          exists: libprint_test.so → DT_NEEDED liblog.so, libm.so — calls __android_log_print("hello") + sin(0)
+├── libm_probe/          NEW: libm_probe.so → DT_NEEDED libm.so — calls acos/sincos/hypot/erf/fma/fe* to force 20+ libm symbols
+├── libc_probe/          NEW: liblibc_probe.so → DT_NEEDED libc.so — calls pthread_mutex, open/read, __cxa_atexit, strlcpy
+├── libdl_probe/         NEW: libdl_probe.so → DT_NEEDED libdl.so — calls dlopen/dlsym/dladdr/dlclose
+├── tls_probe/           NEW: libtls_probe.so → thread_local + __tls_get_addr (TLS relocs)
+└── version_probe/       NEW: libversion_probe.so → DT_VERNEED LIBC with introduced=21/23 symbols (cabs, acoshl)
+```
+
+Each has `print_test.cpp` style single `extern "C" void probe();` and a `.version` is **not** needed for the probe itself — it *consumes* the Bionic `libm.so` `LIBC` version, proving our `bionic-libm` `libm.map.txt` is correct.
+
+### 9.3 How probes are written (one file per edge, `__android_log_print`-style)
+
+Same minimal pattern as `print_test`:
+
+```cpp
+// natives/libm_probe/libm_probe.cpp
+#include <math.h>
+#include <android/log.h>
+extern "C" void libm_probe() {
+  __android_log_print(ANDROID_LOG_INFO, "libm_probe", "sin=%f", sin(0.5));
+  volatile double a = acos(0.5), b = sincos(0); (void)a; (void)b;
+}
+```
+
+`CMakeLists.txt` for the `natives/` project:
+
+```cmake
+add_library(m_probe SHARED libm_probe/libm_probe.cpp)
+target_link_libraries(m_probe PRIVATE log m) # Bionic DT_NEEDED, not host
+set_target_properties(m_probe PROPERTIES OUTPUT_NAME "m_probe" PREFIX "lib" SUFFIX ".so")
+```
+
+Top-level `ExternalProject_Add` builds all `m_*_probe` libs together into `build/debug/lib_android/` — they share the same `lib_android` output so `ulinker::updateLdLibraryPath` sees them together.
+
+### 9.4 Host vs Bionic load — what each test proves
+
+| Test binary (CTest, single process) | How it loads | What it proves | Failure → what to fix |
+|---|---|---|---|
+| `tests/host_dlopen_print` | host `dlopen("lib/liblog.so")` → `dlsym(__android_log_print)` | Host shim still works if someone host-loads (not Bionic) | Shim `.so` not in `lib/` |
+| `tests/bionic_load_log` | `ulinker::init()` → `ulinker::loadLibrary("liblog.so", log_symbols)` → `ulinker::dlsym(handle, "__android_log_print")` | `bionic-linker` solist + hybris publish | `cannot locate symbol` → allowlist missing |
+| `tests/bionic_load_print` | `ulinker::init()` → `loadLibrary("liblog.so")` → `loadLibrary("libprint_test.so", {})` → `dlsym(print_test_hello)` → call → assert log file contains `hello` | Full Bionic `libprint_test.so` with `DT_NEEDED liblog.so` resolves via Bionic namespace, not host | `DT_NEEDED liblog.so not found` → `updateLdLibraryPath` or `lib_android` not in search |
+| `tests/bionic_load_libm_probe` | `ulinker::init()` → `loadLibrary("libm.so", bionic-libm map)` → `loadLibrary("libm_probe.so")` → `dlsym(libm_probe)` → call | Real Bionic `libm.so` 298-sym `LIBC` satisfies `DT_NEEDED libm.so` without host `libm.so.6` `GLIBC_2.2.5` | `DT_VERNEED LIBC not found` → `bionic-libm` version script wrong; `U sincos` → `builtins.cpp` missing |
+| `tests/bionic_load_tls` | same → `libtls_probe.so` | `RELA` + `TLS` relocs (`R_AARCH64_TLS_TPREL`) handled by `bionic/linker/linker_relocate.cpp` | `TLS reloc failed` → `bionic/linker` TLS support missing |
+| `tests/readelf_verneed` | host `llvm-readelf --verneed lib_android/libm_probe.so` | NDK-built probe really has `Verneed: LIBC` `introduced=21` symbols | Probe built with wrong `ANDROID_PLATFORM` |
+
+All `bionic_*` tests are **fork-per-test** or **separate CTest binaries** because `bionic/linker` `g_soinfo_allocator`/`g_default_namespace` is process-global (`solist_init()` once). `ulinker::init()` guards with `std::once_flag` and returns `failure("already initialized")` on second call; tests either `fork()` before `init()` or are separate `add_test` binaries so `solist` is pristine. `ctest -j` still works.
+
+### 9.5 SDK extras — APK / lib extraction for universal coverage
+
+For universal runtime, also test with a **real APK-extracted `libminecraftpe.so` slice** (not just `print_test`):
+
+* Use SDK `build-tools/*/aapt` or `unzip -p app.apk lib/arm64-v8a/libminecraftpe.so > /tmp/libmcpe.so` then `readelf -d /tmp/libmcpe.so | grep NEEDED` to enumerate `DT_NEEDED` set. Feed that set to `hybris-bridge` allowlist generator.
+
+* Keep a **golden `readelf` snapshot** `tests/data/libmcpe.readelf` (committed) and assert `nm -D libBionicLibm.so` covers every `UND` libm symbol from that snapshot — catches drift when Bionic `libm.map.txt` adds `introduced=23` symbols.
+
+* Optional: `qemu-aarch64` + `adb` + `emulator` not needed for linker tests — host `x86_64` Bionic cross-build (`ANDROID_ABI=x86_64`) runs under host `qemu` via `binfmt` if needed, but `arm64-v8a` Bionic `libm_probe.so` can be `readelf`-inspected without execution.
+
+### 9.6 Output layout ties to tests
+
+Already fixed in `ffbird-foundations` + `feat/output-dirs` (`084a3b1`): host libraries → `/lib`, executables → `/bin`, test binaries → `/tests`, android Bionic natives → `/lib_android` (`build/debug/lib_android/libprint_test.so` `T print_test_hello` `U __android_log_print`). Keep this layout — `bionic-libm` `SHARED` also goes to `lib/` (host-visible Bionic libs like `lib` vs `lib_android` for NDK Bionic fixtures are distinct: `lib/libBionicLibm.so` is host-built real Bionic `libm.so`; `lib_android/libm_probe.so` is NDK-built probe that *consumes* it).
+
+---
+
+## 10. How we intend to code it properly
+
 
 * **Small modules, one job:** `bionic-linker` (link only), `hybris-bridge` (translate only), `bionic-libm` (math only), `ulinker` (public wrapper). No `utils` creep.
 * **Headers `.h`-only, ffbird wrappers `C++11`:** Bionic itself is `C17/C++17` — its `STATIC` build uses `CXX17`, but public `ulinker.h`/`hybris_bridge/bridge.h` are `C++11` + `utils::Result` so `file-util`/`runtime-linux` can stay `C++11`.
