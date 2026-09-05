@@ -39,6 +39,18 @@ else()
         target_link_libraries(logger_tests PRIVATE logger ${GTEST_LIB} ${GTEST_MAIN_LIB} pthread)
         target_include_directories(logger_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
         add_test(NAME logger_tests COMMAND logger_tests)
+
+# Tests binaries go to /tests
+set_target_properties(logger_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/tests
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
         return()
     else()
         message(WARNING "GTest not found — skipping logger tests")
@@ -53,3 +65,15 @@ if(TARGET GTest::Main)
     target_link_libraries(logger_tests PRIVATE GTest::Main)
 endif()
 add_test(NAME logger_tests COMMAND logger_tests)
+
+# Tests binaries go to /tests
+set_target_properties(logger_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/tests
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+

@@ -3,6 +3,19 @@
 cmake_minimum_required(VERSION 3.14)
 project(natives LANGUAGES C CXX)
 
+# Output for android natives -> /lib_android
+# Respect externally set output (e.g. from top-level ExternalProject)
+if(NOT CMAKE_LIBRARY_OUTPUT_DIRECTORY)
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib_android)
+endif()
+if(NOT CMAKE_ARCHIVE_OUTPUT_DIRECTORY)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib_android)
+endif()
+if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib_android)
+endif()
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/lib_android)
+
 # This project is intended to be built with Android NDK toolchain:
 #   cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake
 #         -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-21 ..

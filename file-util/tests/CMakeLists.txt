@@ -26,6 +26,18 @@ else()
         add_executable(file_util_tests test_file_util.cpp)
         target_link_libraries(file_util_tests PRIVATE file-util ${GTEST_LIB} ${GTEST_MAIN_LIB} pthread)
         add_test(NAME file_util_tests COMMAND file_util_tests)
+
+# Tests binaries go to /tests
+set_target_properties(file_util_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/tests
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
         return()
     else()
         message(WARNING "GTest not found — skipping file-util tests")
@@ -46,3 +58,15 @@ if(GTEST_MAIN_TARGET)
     target_link_libraries(file_util_tests PRIVATE ${GTEST_MAIN_TARGET})
 endif()
 add_test(NAME file_util_tests COMMAND file_util_tests)
+
+# Tests binaries go to /tests
+set_target_properties(file_util_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/tests
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
