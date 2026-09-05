@@ -44,3 +44,21 @@ set_target_properties(ulinker_tests PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
 )
 add_test(NAME ulinker_tests COMMAND ulinker_tests)
+
+
+# Bionic stress metadata verification (NDK-generated libs)
+add_executable(bionic_stress_meta_tests test_bionic_stress_meta.cpp)
+target_link_libraries(bionic_stress_meta_tests PRIVATE ulinker utils GTest::GTest GTest::Main Threads::Threads dl)
+if(TARGET GTest::Main)
+  target_link_libraries(bionic_stress_meta_tests PRIVATE GTest::Main)
+endif()
+find_package(GTest QUIET)
+set_target_properties(bionic_stress_meta_tests PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+  RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/tests
+  RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/tests
+  RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/tests
+  RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/tests
+)
+# Only run when NDK natives were built — check file exists at test time
+add_test(NAME bionic_stress_meta_tests COMMAND bionic_stress_meta_tests)
