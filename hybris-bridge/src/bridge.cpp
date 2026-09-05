@@ -6,6 +6,10 @@
 #include <mutex>
 #include <cstdarg>
 #include <cstdio>
+#include <string.h>
+
+extern "C" void* __hybris_get_hooked_symbol(const char* sym, const char* lib);
+extern "C" int __system_property_get(const char* key, char* value);
 
 namespace hybris_bridge {
 
@@ -93,7 +97,7 @@ utils::Result<void*> loadHostLibrary(const char* bionicSoname, const char* hostP
     void* hostH = dlopen(hostPath, RTLD_LAZY);
     if (!hostH) {
         const char* e = dlerror();
-        std::string msg = std::string("dlopen host \"")+hostPath+"\" failed: " + (e?e:"unknown");
+        std::string msg = std::string("dlopen host \"") + hostPath + "\" failed: " + (e?e:"unknown");
         return utils::Result<void*>::failure(msg);
     }
 
@@ -101,6 +105,11 @@ utils::Result<void*> loadHostLibrary(const char* bionicSoname, const char* hostP
     std::vector<std::string> missing;
     for (int i=0; bionicAllowlist[i]; ++i) {
         const char* sym = bionicAllowlist[i];
+        void* hooked = __hybris_get_hooked_symbol(sym, bionicSoname);
+        if (hooked) {
+            syms[sym] = hooked;
+            continue;
+        }
         void* p = dlsym(hostH, sym);
         if (p) syms[sym] = p;
         else missing.push_back(sym);
@@ -122,8 +131,6 @@ utils::Result<void*> loadHostLibrary(const char* bionicSoname, const char* hostP
         dlclose(hostH);
         return utils::Result<void*>::failure("ulinker::loadLibrary failed: " + r.error);
     }
-    // Keep host handle alive (leaked) for universal runtime — Bionic symbols point into host .so
-    // Intentionally not dlclose
     return utils::Result<void*>::success(r.value);
 }
 
@@ -147,6 +154,12 @@ utils::Result<void> stubSymbols(const char* bionicSoname, const char** symbols, 
     auto r = ulinker::loadLibrary(bionicSoname, syms);
     if (!r.ok) return utils::Result<void>::failure(r.error);
     return utils::Result<void>::success();
+}
+
+utils::Result<int> getSystemProperty(const char* key, char* value) noexcept {
+    if(!key || !value) return utils::Result<int>::failure("null");
+    int r = __system_property_get(key, value);
+    return utils::Result<int>::success(r);
 }
 
 }  // namespace hybris_bridge

@@ -5,8 +5,17 @@
 #error "runtime-linux requires Linux"
 #endif
 
+#include "utils/result.h"
+#include <string>
+#include <unordered_map>
+
 namespace runtime_linux {
- // TODO: implemented in later phase — stub only
-}
+
+utils::Result<void> init() noexcept;
+utils::Result<void*> loadLibrary(const char* soname, const char* hostPath, const char** allowlist) noexcept;
+utils::Result<void*> getSymbol(void* handle, const char* name) noexcept;
+utils::Result<size_t> getLibraryBase(void* handle) noexcept;
+
+}  // namespace runtime_linux
 
 #endif  // RUNTIME_LINUX_RUNTIME_H

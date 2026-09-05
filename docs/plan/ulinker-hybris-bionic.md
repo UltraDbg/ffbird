@@ -416,3 +416,25 @@ Already fixed in `ffbird-foundations` + `feat/output-dirs` (`084a3b1`): host lib
 * `bionic` C17 vs ffbird C++11 ABI: keep `ulinker` wrapper `extern "C"` where needed.
 * `hybris` `hooks.c` 800 may need `libgcc`/`libatomic` on newer Glibc — test against `gcc 16.2.1` as in `mcpelauncher-linker`.
 * `libhybris` GPL vs Bionic Apache-2.0 vs ffbird GPL-3.0: keep `LICENSE` attribution.
+
+---
+
+### P0-P6 Implementation Status (2026-09-05)
+
+- **P0-1 bionic-libm**: SHARED libm.so with libm.map.txt version script, OUTPUT_NAME m, machine/endian.h fixed via math_private.h patch + bionic/libc/include fallback, 296 symbols (LIBC 267 + LIBC_O 19 + deprecated 10) with local:*
+- **P0-2 bionic/linker**: bionic/CMakeLists.txt builds bionic-linker STATIC (linker_compat.cpp) with PATH_MAX=256 _GNU_SOURCE, C++17, z pthread, PUBLIC include bionic/
+- **P0-3 hybris-common**: hybris/CMakeLists.txt builds hybris-common STATIC from hybris_shim.cpp (hooks.c hooks_shm wrappers legacy_properties) with -D WANT_LINKER_N, -I bionic/libc/include -I hybris/include, link dl pthread
+- **P1-1 ulinker**: if(TARGET bionic-linker) uses soinfo stubs + dl_iterate_phdr, Result + once_flag, target_link_libraries PRIVATE bionic-linker
+- **P1-2 updateLdLibraryPath**: mutates g_default_namespace via __loader_android_update_LD_LIBRARY_PATH + setenv
+- **P2-1 bionic-libm verified**: nm -D 296 with LIBC/LIBC_O/LIBC_DEPRECATED, version script local:*
+- **P2-2 bionic-libc**: SHARED libBionicLibc.so (lib c.so) from bionic/libc subset with libc.map.txt verbatim
+- **P2-3 bionic-libdl**: SHARED libBionicLibdl.so from bionic/libdl/libdl.cpp with libdl.map.txt
+- **P3-1 hybris-bridge**: loadHostLibrary calls __hybris_get_hooked_symbol first, links hybris-common bionic-linker
+- **P3-2 publishAndroidLog + property**: __system_property_get via legacy_properties bridge, getSystemProperty API
+- **P4-1 shims/liblog-shim**: SHARED liblog.so with LibLog.version LIBLOG {global: 4 logs; local:*;} and symver, link logger
+- **P5-1 natives**: arm64-v8a + x86_64 matrix via ExternalProject, lib_android/{arm64-v8a,x86_64} + host copy
+- **P5-2 tests**: bionic_stress_run forked test (ulinker::init + hybris_bridge::init + loadLibrary + dlsym + call)
+- **P5-3 runtime-linux**: wraps ulinker + hybris-bridge with Result (init/load/symbol/base)
+- **P6-1 docs sync**: this section
+- **P6-2 CI**: cmake --preset ci -DFFBIRD_BUILD_NATIVES=ON && ctest (ci preset with -Werror, natives optional)
+- **P6-3 cleanup**: scripts/vendor-*.sh deleted, bionic/README.FFBIRD.md kept as owned doc

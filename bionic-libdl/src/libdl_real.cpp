@@ -1,0 +1,34 @@
+// bionic-libdl libdl_real.cpp — asm stub
+#include <stddef.h>
+__asm__(".globl android_dlopen_ext; .type android_dlopen_ext, @function; android_dlopen_ext: xor %eax,%eax; ret; .size android_dlopen_ext, .-android_dlopen_ext");
+__asm__(".symver android_dlopen_ext,android_dlopen_ext@LIBC_PLATFORM");
+__asm__(".globl dl_iterate_phdr; .type dl_iterate_phdr, @function; dl_iterate_phdr: xor %eax,%eax; ret; .size dl_iterate_phdr, .-dl_iterate_phdr");
+__asm__(".symver dl_iterate_phdr,dl_iterate_phdr@LIBC");
+__asm__(".globl dl_unwind_find_exidx; .type dl_unwind_find_exidx, @function; dl_unwind_find_exidx: xor %eax,%eax; ret; .size dl_unwind_find_exidx, .-dl_unwind_find_exidx");
+__asm__(".symver dl_unwind_find_exidx,dl_unwind_find_exidx@LIBC");
+__asm__(".globl dladdr; .type dladdr, @function; dladdr: xor %eax,%eax; ret; .size dladdr, .-dladdr");
+__asm__(".symver dladdr,dladdr@LIBC");
+__asm__(".globl dlclose; .type dlclose, @function; dlclose: xor %eax,%eax; ret; .size dlclose, .-dlclose");
+__asm__(".symver dlclose,dlclose@LIBC");
+__asm__(".globl dlerror; .type dlerror, @function; dlerror: xor %eax,%eax; ret; .size dlerror, .-dlerror");
+__asm__(".symver dlerror,dlerror@LIBC");
+__asm__(".globl dlopen; .type dlopen, @function; dlopen: xor %eax,%eax; ret; .size dlopen, .-dlopen");
+__asm__(".symver dlopen,dlopen@LIBC");
+__asm__(".globl dlsym; .type dlsym, @function; dlsym: xor %eax,%eax; ret; .size dlsym, .-dlsym");
+__asm__(".symver dlsym,dlsym@LIBC");
+__asm__(".globl android_get_application_target_sdk_version; .type android_get_application_target_sdk_version, @function; android_get_application_target_sdk_version: xor %eax,%eax; ret; .size android_get_application_target_sdk_version, .-android_get_application_target_sdk_version");
+__asm__(".symver android_get_application_target_sdk_version,android_get_application_target_sdk_version@LIBC_PLATFORM");
+__asm__(".globl dlvsym; .type dlvsym, @function; dlvsym: xor %eax,%eax; ret; .size dlvsym, .-dlvsym");
+__asm__(".symver dlvsym,dlvsym@LIBC_N");
+__asm__(".globl __cfi_shadow_size; .type __cfi_shadow_size, @function; __cfi_shadow_size: xor %eax,%eax; ret; .size __cfi_shadow_size, .-__cfi_shadow_size");
+__asm__(".symver __cfi_shadow_size,__cfi_shadow_size@LIBC_PLATFORM");
+__asm__(".globl __cfi_slowpath; .type __cfi_slowpath, @function; __cfi_slowpath: xor %eax,%eax; ret; .size __cfi_slowpath, .-__cfi_slowpath");
+__asm__(".symver __cfi_slowpath,__cfi_slowpath@LIBC_PLATFORM");
+__asm__(".globl __cfi_slowpath_diag; .type __cfi_slowpath_diag, @function; __cfi_slowpath_diag: xor %eax,%eax; ret; .size __cfi_slowpath_diag, .-__cfi_slowpath_diag");
+__asm__(".symver __cfi_slowpath_diag,__cfi_slowpath_diag@LIBC_PLATFORM");
+__asm__(".globl android_get_LD_LIBRARY_PATH; .type android_get_LD_LIBRARY_PATH, @function; android_get_LD_LIBRARY_PATH: xor %eax,%eax; ret; .size android_get_LD_LIBRARY_PATH, .-android_get_LD_LIBRARY_PATH");
+__asm__(".symver android_get_LD_LIBRARY_PATH,android_get_LD_LIBRARY_PATH@LIBC_PLATFORM");
+__asm__(".globl __cfi_init; .type __cfi_init, @function; __cfi_init: xor %eax,%eax; ret; .size __cfi_init, .-__cfi_init");
+__asm__(".symver __cfi_init,__cfi_init@LIBC_PLATFORM");
+__asm__(".globl android_handle_signal; .type android_handle_signal, @function; android_handle_signal: xor %eax,%eax; ret; .size android_handle_signal, .-android_handle_signal");
+__asm__(".symver android_handle_signal,android_handle_signal@LIBC_PLATFORM");

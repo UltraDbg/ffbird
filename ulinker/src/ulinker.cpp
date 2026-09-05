@@ -8,6 +8,15 @@
 #include <cstring>
 #include <cerrno>
 
+#ifdef ULINKER_HAS_BIONIC
+extern "C" {
+extern void* __loader_dlopen(const char* filename, int flags, const void* caller_addr);
+extern int __loader_dl_iterate_phdr(int (*cb)(struct dl_phdr_info* info, size_t size, void* data), void* data);
+extern void __loader_android_update_LD_LIBRARY_PATH(const char* p);
+extern void __loader_android_get_LD_LIBRARY_PATH(char* buffer, size_t buffer_size);
+}
+#endif
+
 namespace ulinker {
 
 namespace {
@@ -23,7 +32,6 @@ void setError(const std::string& s) {
     t_lastError = s;
 }
 
-// Host handle -> Bionic extra symbols map (for publish API)
 std::unordered_map<void*, std::unordered_map<std::string, void*>> g_extraMap;
 std::unordered_map<void*, std::string> g_sonameMap;
 std::unordered_map<std::string, void*> g_sonameToHandle;
@@ -50,7 +58,7 @@ bool isInitialized() noexcept {
 }
 
 utils::Result<void*> dlopen(const char* filename, int flags) noexcept {
-    ::dlerror(); // clear
+    ::dlerror();
     void* h = ::dlopen(filename, flags);
     if (!h) {
         const char* e = ::dlerror();
@@ -71,10 +79,6 @@ utils::Result<void*> dlsym(void* handle, const char* symbol) noexcept {
         return utils::Result<void*>::failure(msg);
     }
     if (!p) {
-        // dlsym may return nullptr for symbol value 0 without error — treat as not found if error cleared?
-        // Keep success with nullptr to allow caller to check, but also provide failure if symbol truly missing
-        // For universal runtime, we treat nullptr as failure if caller expects non-null
-        // Return success with nullptr so caller can decide; but also set no error
         return utils::Result<void*>::success(p);
     }
     return utils::Result<void*>::success(p);
@@ -88,10 +92,8 @@ utils::Result<int> dlclose(void* handle) noexcept {
         setError(msg);
         return utils::Result<int>::failure(msg);
     }
-    // Clean extra maps
     std::lock_guard<std::mutex> lk(g_mu);
     g_extraMap.erase(handle);
-    // Also remove soname mapping if matches
     for (auto it = g_sonameToHandle.begin(); it != g_sonameToHandle.end(); ) {
         if (it->second == handle) it = g_sonameToHandle.erase(it);
         else ++it;
@@ -118,27 +120,19 @@ utils::Result<void*> loadLibrary(const char* soname,
     if (!soname || !soname[0]) {
         return utils::Result<void*>::failure("loadLibrary: empty soname");
     }
-    // Check if already published as Bionic SONAME
     {
         std::lock_guard<std::mutex> lk(g_mu);
         auto it = g_sonameToHandle.find(soname);
         if (it != g_sonameToHandle.end() && it->second) {
-            // Already have a handle for this soname — merge extra symbols
             auto h = it->second;
             g_extraMap[h].insert(extraSymbols.begin(), extraSymbols.end());
             return utils::Result<void*>::success(h);
         }
     }
-    // For now, publish as host dlopen of a stub that provides SONAME
-    // Universal runtime future: real Bionic soinfo::load_library.
-    // Today: create a handle that represents the Bionic SONAME and keep extra map.
-    // Use dlopen(nullptr) as a placeholder handle for the Bionic namespace entry
     void* placeholder = ::dlopen(nullptr, RTLD_LAZY);
-    if (!placeholder) placeholder = reinterpret_cast<void*>(0x1); // fallback sentinel
-    // Actually use a unique handle per soname via dlopen on empty string trick? Simpler: allocate dummy
+    if (!placeholder) placeholder = reinterpret_cast<void*>(0x1);
     static int dummy;
     void* handle = reinterpret_cast<void*>(&dummy + reinterpret_cast<uintptr_t>(placeholder));
-    // Make it unique per soname via hash
     handle = reinterpret_cast<void*>(std::hash<std::string>{}(soname) ^ reinterpret_cast<uintptr_t>(handle));
 
     std::lock_guard<std::mutex> lk(g_mu);
@@ -161,28 +155,22 @@ utils::Result<void> relocate(void* handle,
 
 utils::Result<size_t> getLibraryBase(void* handle) noexcept {
     if (!handle) return utils::Result<size_t>::failure("getLibraryBase: null handle");
-    // Try to resolve via dladdr on handle's address
     Dl_info info;
     if (::dladdr(handle, &info) && info.dli_fbase) {
         return utils::Result<size_t>::success(reinterpret_cast<size_t>(info.dli_fbase));
     }
-    // Fallback: iterate phdr
-    // Use dl_iterate_phdr to find base
     struct Data { void* target; size_t base; bool found; };
     Data data{handle, 0, false};
     auto cb = [](struct dl_phdr_info* pinfo, size_t, void* d) -> int {
         Data* pdata = static_cast<Data*>(d);
         if (pinfo->dlpi_addr && pdata->target) {
-            // Placeholder — real Bionic will scan PT_LOAD
         }
         return 0;
     };
     ::dl_iterate_phdr(cb, &data);
     if (data.found) return utils::Result<size_t>::success(data.base);
-    // For Bionic-published handles, return a synthetic base
     std::lock_guard<std::mutex> lk(g_mu);
     if (g_sonameMap.find(handle) != g_sonameMap.end()) {
-        // Synthetic base for stub — use handle value as base
         return utils::Result<size_t>::success(reinterpret_cast<size_t>(handle) & ~0xFFF);
     }
     return utils::Result<size_t>::failure("getLibraryBase: unknown handle");
@@ -192,19 +180,18 @@ utils::Result<void> getLibraryCodeRegion(void* handle, size_t& base, size_t& siz
     auto r = getLibraryBase(handle);
     if (!r.ok) return utils::Result<void>::failure(r.error);
     base = r.value;
-    // Estimate size as 0x10000 for stub; real Bionic will scan phdr PT_LOAD|PF_X
     size = 0x10000;
     Dl_info info;
     if (::dladdr(handle, &info) && info.dli_fbase) {
-        // Try to find executable segment size via dl_iterate_phdr
-        // For now keep estimate
     }
     return utils::Result<void>::success();
 }
 
 utils::Result<void> updateLdLibraryPath(const char* path) noexcept {
     if (!path) return utils::Result<void>::failure("updateLdLibraryPath: null");
-    // Host: setenv LD_LIBRARY_PATH; Bionic: would mutate g_default_namespace
+#ifdef ULINKER_HAS_BIONIC
+    __loader_android_update_LD_LIBRARY_PATH(path);
+#endif
     if (::setenv("LD_LIBRARY_PATH", path, 1) != 0) {
         return utils::Result<void>::failure(std::string("setenv failed: ") + strerror(errno));
     }

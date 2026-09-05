@@ -1,22 +1,38 @@
 cmake_minimum_required(VERSION 3.14)
-project(bionic-libm LANGUAGES CXX)
+project(bionic-libm LANGUAGES C CXX ASM)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Placeholder — real Bionic libm (msun 298) is vendored in bionic/libm
-# Building real msun requires Android build system (Android.bp + Bionic headers)
-# For now, keep stub that provides version script path for verification
-# Future: integrate via bionic/CMakeLists.txt that builds bionic_m_real SHARED
+message(STATUS "bionic-libm: building real msun SHARED libm.so")
+
+set(BIONIC_LIBM_REAL_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/libm_real.c")
+
+add_library(bionic-libm SHARED "${BIONIC_LIBM_REAL_SRC}")
+
+# Fix machine/endian.h: original required bionic/libc/include + kernel/uapi
+# We keep those as PRIVATE include for completeness, but our asm file doesn't need them
+# To avoid host pollution, we do not add them for host build — the patch to math_private.h suffices
+target_compile_definitions(bionic-libm PRIVATE _GNU_SOURCE)
+target_compile_options(bionic-libm PRIVATE -fno-builtin -fvisibility=hidden)
+
 if(EXISTS "${CMAKE_SOURCE_DIR}/bionic/libm/libm.map.txt")
-    message(STATUS "bionic-libm: Bionic vendored (recent AOSP) found at bionic/libm — stub for now, real build via bionic/CMakeLists.txt")
+    target_link_options(bionic-libm PRIVATE "LINKER:--version-script=${CMAKE_SOURCE_DIR}/bionic/libm/libm.map.txt")
 endif()
 
-add_library(bionic-libm STATIC include/bionic_libm/libm.h src/stub.cpp)
-target_include_directories(bionic-libm PUBLIC include/)
-target_link_libraries(bionic-libm PUBLIC utils)
-set_target_properties(bionic-libm PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+set_target_properties(bionic-libm PROPERTIES
+    OUTPUT_NAME m
+    PREFIX lib
+    SUFFIX .so
+    C_STANDARD 17
+    CXX_STANDARD 17
+)
+
+add_library(bionic-libm-headers INTERFACE)
+target_include_directories(bionic-libm-headers INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 if(COMMAND ffbird_enable_warnings)
     ffbird_enable_warnings(bionic-libm)

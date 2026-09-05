@@ -19,6 +19,7 @@ utils::Result<void*> loadHostLibrary(const char* bionicSoname, const char* hostP
     const std::unordered_map<std::string, void*>& extra = {}) noexcept;
 
 utils::Result<void> publishAndroidLog() noexcept;
+utils::Result<int> getSystemProperty(const char* key, char* value) noexcept;
 utils::Result<void> stubSymbols(const char* bionicSoname, const char** symbols, void* stub) noexcept;
 
 // Introspection

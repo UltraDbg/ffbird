@@ -16,6 +16,7 @@
 #define	_MATH_PRIVATE_H_
 
 #include <sys/types.h>
+#include <math.h>
 #include <machine/endian.h>
 
 /*

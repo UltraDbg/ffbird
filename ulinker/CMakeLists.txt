@@ -9,7 +9,12 @@ add_library(ulinker STATIC include/ulinker/ulinker.h src/ulinker.cpp)
 target_include_directories(ulinker PUBLIC include/)
 target_link_libraries(ulinker PUBLIC utils)
 target_link_libraries(ulinker PRIVATE logger)
-# dl for host dlopen
+
+if(TARGET bionic-linker)
+    target_link_libraries(ulinker PRIVATE bionic-linker)
+    target_compile_definitions(ulinker PRIVATE ULINKER_HAS_BIONIC=1)
+endif()
+
 find_library(DL_LIB dl)
 if(DL_LIB)
     target_link_libraries(ulinker PUBLIC ${DL_LIB})
