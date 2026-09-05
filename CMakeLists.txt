@@ -114,6 +114,7 @@ endif()
 ##########################################
 # Subdirectories — foundations
 ##########################################
+add_subdirectory(utils)
 add_subdirectory(logger)
 add_subdirectory(file-util)
 add_subdirectory(argparser)

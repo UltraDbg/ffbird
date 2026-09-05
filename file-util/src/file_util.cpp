@@ -56,17 +56,17 @@ bool FileUtil::isDirectory(const std::string& path) {
     return S_ISDIR(st.st_mode);
 }
 
-logger::Result<void> FileUtil::mkdirRecursive(const std::string& path) {
+utils::Result<void> FileUtil::mkdirRecursive(const std::string& path) {
     if (path.empty()) {
-        return logger::Result<void>::failure("empty path");
+        return utils::Result<void>::failure("empty path");
     }
     // Already exists as dir?
     struct stat st;
     if (stat(path.c_str(), &st) == 0) {
         if (S_ISDIR(st.st_mode)) {
-            return logger::Result<void>::success();
+            return utils::Result<void>::success();
         } else {
-            return logger::Result<void>::failure("path exists but is not a directory: " + path);
+            return utils::Result<void>::failure("path exists but is not a directory: " + path);
         }
     }
     // Build incrementally
@@ -99,25 +99,25 @@ logger::Result<void> FileUtil::mkdirRecursive(const std::string& path) {
 #ifdef HAVE_LOGGER
                 logger::Logger::global().log(logger::Level::WARN, "file-util", "%s", err.c_str());
 #endif
-                return logger::Result<void>::failure(err);
+                return utils::Result<void>::failure(err);
             }
         } else {
             if (!S_ISDIR(st.st_mode)) {
-                return logger::Result<void>::failure("path exists but is not a directory: " + cur);
+                return utils::Result<void>::failure("path exists but is not a directory: " + cur);
             }
         }
     }
-    return logger::Result<void>::success();
+    return utils::Result<void>::success();
 }
 
-logger::Result<std::string> FileUtil::readFile(const std::string& path) {
+utils::Result<std::string> FileUtil::readFile(const std::string& path) {
     int fd = open(path.c_str(), O_RDONLY);
     if (fd < 0) {
         std::string err = std::string("open failed: ") + path + ": " + strerror(errno);
 #ifdef HAVE_LOGGER
         logger::Logger::global().log(logger::Level::DEBUG, "file-util", "%s", err.c_str());
 #endif
-        return logger::Result<std::string>::failure(err);
+        return utils::Result<std::string>::failure(err);
     }
     // Get size via lseek
     off_t size = lseek(fd, 0, SEEK_END);
@@ -132,9 +132,9 @@ logger::Result<std::string> FileUtil::readFile(const std::string& path) {
         }
         close(fd);
         if (n < 0) {
-            return logger::Result<std::string>::failure(std::string("read failed: ") + strerror(errno));
+            return utils::Result<std::string>::failure(std::string("read failed: ") + strerror(errno));
         }
-        return logger::Result<std::string>::success(out);
+        return utils::Result<std::string>::success(out);
     }
     lseek(fd, 0, SEEK_SET);
     std::string out;
@@ -145,21 +145,21 @@ logger::Result<std::string> FileUtil::readFile(const std::string& path) {
         if (n < 0) {
             if (errno == EINTR) continue;
             close(fd);
-            return logger::Result<std::string>::failure(std::string("read failed: ") + strerror(errno));
+            return utils::Result<std::string>::failure(std::string("read failed: ") + strerror(errno));
         }
         if (n == 0) break;
         total += static_cast<size_t>(n);
     }
     close(fd);
     out.resize(total);
-    return logger::Result<std::string>::success(out);
+    return utils::Result<std::string>::success(out);
 }
 
-logger::Result<void> FileUtil::writeFile(const std::string& path, const std::string& data) {
+utils::Result<void> FileUtil::writeFile(const std::string& path, const std::string& data) {
     // Ensure parent dirs exist
     std::string parent = getParent(path);
     if (parent != "." && parent != "/" && !parent.empty()) {
-        logger::Result<void> r = mkdirRecursive(parent);
+        utils::Result<void> r = mkdirRecursive(parent);
         if (!r.ok) {
             return r;
         }
@@ -170,7 +170,7 @@ logger::Result<void> FileUtil::writeFile(const std::string& path, const std::str
 #ifdef HAVE_LOGGER
         logger::Logger::global().log(logger::Level::WARN, "file-util", "%s", err.c_str());
 #endif
-        return logger::Result<void>::failure(err);
+        return utils::Result<void>::failure(err);
     }
     size_t total = 0;
     while (total < data.size()) {
@@ -178,12 +178,12 @@ logger::Result<void> FileUtil::writeFile(const std::string& path, const std::str
         if (n < 0) {
             if (errno == EINTR) continue;
             close(fd);
-            return logger::Result<void>::failure(std::string("write failed: ") + strerror(errno));
+            return utils::Result<void>::failure(std::string("write failed: ") + strerror(errno));
         }
         total += static_cast<size_t>(n);
     }
     close(fd);
-    return logger::Result<void>::success();
+    return utils::Result<void>::success();
 }
 
 }  // namespace file_util

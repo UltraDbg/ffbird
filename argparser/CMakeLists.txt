@@ -10,9 +10,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(argparser INTERFACE)
 target_include_directories(argparser INTERFACE include/)
 target_compile_features(argparser INTERFACE cxx_std_11)
-# argparser uses logger::Result, so depend on logger if available
-if(TARGET logger)
-    target_link_libraries(argparser INTERFACE logger)
+# argparser uses utils::Result
+if(TARGET utils)
+    target_link_libraries(argparser INTERFACE utils)
 endif()
 
 if(FFBIRD_BUILD_TESTS)

@@ -6,7 +6,7 @@
 #endif
 
 #include <string>
-#include "logger/result.h"
+#include "utils/result.h"
 
 namespace file_util {
 
@@ -15,9 +15,9 @@ public:
     static std::string getParent(const std::string& path);
     static bool exists(const std::string& path);
     static bool isDirectory(const std::string& path);
-    static logger::Result<void> mkdirRecursive(const std::string& path);
-    static logger::Result<std::string> readFile(const std::string& path);
-    static logger::Result<void> writeFile(const std::string& path, const std::string& data);
+    static utils::Result<void> mkdirRecursive(const std::string& path);
+    static utils::Result<std::string> readFile(const std::string& path);
+    static utils::Result<void> writeFile(const std::string& path, const std::string& data);
 };
 
 }  // namespace file_util
