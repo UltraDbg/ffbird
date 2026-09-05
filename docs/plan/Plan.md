@@ -1,300 +1,225 @@
-# ffbird — Stronger Base Plan (rewrite, foundations → runtime)
+# ffbird — Rewrite Plan (foundations first)
 
-> Status: draft — step-by-step REWRITE plan. Reference is `docs/research/ffbird_cool.md` for *lessons*, not for copy.
-> Source to learn from: `ffbird_cool` / `ffbird_old`. Source to build: `ffbird/` skeleton — `logger`, `file-util`, `argparser`, `anticrash`, `client`, `ext`.
-> Goal: rewrite as stronger, more organized, more powerful base. Foundations first. No porting — every module is designed fresh, with its own interface at a clean seam.
-
----
-
-## Rewrite stance
-
-- **Not a port.** We do not copy `ffbird_cool/Source/ImHelper/Log.cpp` into `logger/src/log.cpp`. We *study* what it does (research doc), then design the new module's interface from scratch against the domain we want.
-- **Research is input, not spec.** `docs/research/ffbird_cool.md` tells us what Flappy Bird's Bionic runtime *needs* (16 ANativeActivity callbacks, 64-byte AConfiguration, 0x130 android_app, 4-path asset resolve, version-script shims). The new design must *satisfy* those ABI truths but may organize them differently.
-- **Prove each seam with tests before the next layer touches it.** A shim is not "done" when it compiles — it's done when `readelf --dyn-syms` + a host `dlopen` test proves the symbol is exported with the right version and forwards correctly.
-- **One canonical error vocabulary.** `ffbird_cool` mixes `Result<T>` and `std::expected<T,IOError>`. Rewrite picks one: `std::expected` (C++23) for all new APIs. No new `Result<T>` type.
+> Status: draft — rewrite, not port.
+> Constraints: `.h` only, `C++11` mandatory, small modules (each does one job), no copy from `ffbird_cool` / `mcpelauncher-manifest` (module ideas only if explicitly allowed — see research docs for lessons, not for structure).
+> Way of work: `natives/` are test fixtures built with Android NDK; `ffbird` itself is Linux-only and fails to compile on other OS. `client/` and `ext/` are gone — `ext/` is reserved for future external CMake packages (e.g. sdl3).
+> Grill: 2 rounds + NDK discovery (`/home/clickpaw/Android/Sdk/ndk/30.0.16138531` r30-beta3, platform `android-37.0`, CMake 4.4.3, gcc 16.2.1 / clang 22.1.8).
 
 ---
 
-## Principles (stronger base)
+## 1. What we are not doing yet
 
-1. **Deep modules, small interfaces.** Each lib hides a lot behind a few functions. If a header grows past ~80 lines, the seam is wrong.
-2. **Deps point one way.** `logger` ← `file-util` ← `platform` ← `runtime` ← `compat` ← `shims` ← `game` ← `client`. No cycles. `argparser` and `anticrash` are leaf libs (no runtime dep).
-3. **ABI fidelity is a test, not a comment.** Every Bionic ABI struct gets a `static_assert(sizeof == N)` + a compile-time test. Every shim symbol gets a `__asm__(".symver")` + an `nm -D` test.
-4. **Determinism over cleverness.** Asset resolution has one implementation in `file-util` (`resolve_asset`) — not three copies. Callers call it.
-5. **Presets + warnings from day 1.** `debug`/`release`/`ci (-Werror)` presets, `flbird_enable_warnings`, `ctest` wired per phase.
+We stop before any Android/runtime/JVM work. No `ANativeActivity`, no `AAssetManager`, no `ALooper`, no EGL/GLES forwarding, no `libjnivm`/`hybris` linker. Those concepts are **undecided placeholders** — we will design them when we reach them, not copy `ffbird_cool` or `mcpelauncher-manifest`.
+
+That means in this plan we only harden the foundations: build env, logging, file I/O, arg parsing, crash handling, and empty stubs that prove the module layout. The first milestone (load `libprint_test.so` and see `__android_log_print`) is tracked but **not chased at the cost of foundations** — it comes last in this document.
 
 ---
 
-## Phase 0 — Build & conventions (skeleton harden)
+## 2. Module map (top-level dirs are the seam)
 
-**Goal**: empty skeleton builds green with conventions fixed.
+```
+ffbird/
+├── CMakeLists.txt            # thin, Linux-only gate, adds subdirs, calls natives/ separately
+├── CMake/                    # Options.cmake, Deps.cmake, CWarnings.cmake  (cmake min picked per function used)
+├── CMakePresets.json         # debug / release / ci (-Werror)
+├── .clang-format / .clang-tidy  # defaults proposed by us (see Phase 0)
+├── ext/README.md             # reserved for future external packages (e.g. sdl3) — not used now
+├── natives/                  # separate CMake project, built with NDK toolchain (see Phase 6)
+│   └── print_test/           # → libprint_test.so, one C file calling __android_log_print
+├── logger/                   # 1 job: thread-safe logging
+├── file-util/                # 1 job: file + env path helpers (FileUtil + EnvPathUtil)
+├── argparser/                # 1 job: header-only arg parsing
+├── anticrash/                # 1 job: host signal handler (thread-safe, stack trace)
+├── platform-linux/           # stub at this stage — compiles only on Linux, else #error
+├── runtime-linux/            # stub at this stage — same guard
+├── libc-shim/                # stub per-shim naming convention (top-level, one per .so)
+├── libgles-shim/             # stub (example name, pattern: lib*.so → lib*-shim/)
+├── libegl-shim/              # stub
+└── game/                     # one game impl stub (not Android-generic code) — empty now
+```
 
-- Fix top-level `CMakeLists.txt` git-hash helper (currently `execute_process(COMMAND ${GIT_EXEC} WORKING_DIRECTORY ...)` is broken — needs real `git rev-parse`).
-- Create `CMake/` modules fresh (not copied): `Options.cmake` (`FFBIRD_BUILD_TESTS`, `FFBIRD_ENABLE_LTO`, `FFBIRD_WERROR`), `Deps.cmake` (SDL3 via `find_package` → `pkg-config` fallback, `Threads`, `OpenGL` optional), `CWarnings.cmake` (`flbird_enable_warnings` with `-Wall -Wextra -Wpedantic -Wshadow`, GCC extras). Design for new layout, inspired by `cool`.
-- Create `CMakePresets.json` (`debug`/`release`/`ci`) and `compile_commands.json` symlink handling.
-- Add `.clang-format` / `.clang-tidy` tuned for rewrite (C++23, 100 cols, `clang-tidy` checks we want from scratch).
-- Keep `add_subdirectory` order `logger → file-util → argparser → anticrash → ext → client`.
-- Wire `ctest` skeleton and `CTest` include.
+**Rules**:
 
-**Exit**: `cmake --preset debug && cmake --build --preset debug` succeeds on empty libs.
-
-Ref: research §§1,10 — layout & CMake lessons.
+* Only `.h` files for headers (C++ classes allowed inside, with `#ifndef` guards or `#pragma once` + guards — we pick one standard and enforce via `clang-format`). No `.hpp` anywhere.
+* `C++11` everywhere: `-std=c++11`, no `std::expected`, no `string_view`, no `optional`. Errors via `Result<T>` (see Phase 0).
+* Each `CMakeLists.txt` is small, declares one `add_library` (`STATIC` or `INTERFACE`) and its direct `PUBLIC` include + `PRIVATE` link. Dependencies point one way: `logger` ← `file-util` ← `platform-linux` family (stubs for now). `argparser` and `anticrash` are leaves.
+* Every module has `include/<module>/<header>.h` + `src/*.cpp` + optional `tests/` with GTest (`enable_testing`, `add_test`).
+* Non-Linux → `#error "ffbird requires Linux"` in every public `.h` (or at least in top `CMakeLists.txt` check `if(NOT LINUX) message(FATAL_ERROR)` plus header guard).
 
 ---
 
-## Phase 1 — `logger` (rewrite)
+## 3. Phase 0 — Build environment (must be green before any feature)
 
-**Goal**: thread-safe logging as a deep module. Interface designed for *clients*: game code, shims, crash handler.
+**Goal**: `cmake --preset debug && cmake --build --preset debug` + `ctest` works on empty stubs.
 
-*Lesson from cool* (research §3.3): cool's `ImHelper::Log` couples console + file + color + `source_location` in one singleton. Works, but hard to test (global mutex + `ofstream` inside). Rewrite favors injectability.
+Tasks:
 
-**Design sketch (not a copy)**:
-```
-logger/include/logger/logger.hpp
-  enum class Level { Debug, Info, Warn, Error, None }
-  struct Sink { virtual void write(Level, string_view, source_location) = 0 }
-  class Logger { add_sink(sink), set_min_level, log(level, fmt, ...) }
-  // Provide ConsoleSink + FileSink + NullSink; Logger is not a singleton — client creates one and shares via shared_ptr.
-```
-- If singleton is still desired for shim convenience, provide `Logger::global()` as thin accessor over an instance, not as the core.
+* Fix top-level `CMakeLists.txt`: remove `client/` `add_subdirectory`, keep `logger/file-util/argparser/anticrash/platform-linux/runtime-linux/libc-shim/.../game` + `add_subdirectory(ext)` placeholder + separate `add_subdirectory(natives)` guard (see Phase 6). Fix `git_commit_hash` (currently `execute_process(COMMAND ${GIT_EXEC} WORKING_DIRECTORY ...)` missing args — needs `git rev-parse --short HEAD` or `log -1 --format=%h`). Set `CMAKE_CXX_STANDARD 11`, `REQUIRED ON`, `EXTENSIONS OFF`, `POSITION_INDEPENDENT_CODE ON`, `EXPORT_COMPILE_COMMANDS ON`. Add `if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux") message(FATAL_ERROR "ffbird requires Linux")`.
+* `CMake/min_version` rationale: pick `cmake_minimum_required(VERSION 3.8)` if we use `try_compile` with `CXX_STANDARD` etc., but we will state the exact version in the file header as "minimum 3.5 because we only use `add_library INTERFACE`, `target_include_directories`, `find_package`". We will not hard-code `3.0...4.0` range — pick the smallest that covers used commands (inspect after writing CMakeLists).
+* Create `CMake/Options.cmake` (options: `FFBIRD_BUILD_TESTS ON/OFF`, `FFBIRD_WERROR ON in ci`), `CMake/Deps.cmake` (only `Threads REQUIRED` + optional `GTest` via `find_package(GTest)` for `tests/`), `CMake/CWarnings.cmake` (`flbird_enable_warnings(target)` with `-Wall -Wextra -Wpedantic -Wconversion -Wshadow` + GCC extras `-Wmisleading-indentation -Wduplicated-cond`), plus `check_cxx_source_compiles` for atomics if needed.
+* `CMakePresets.json` `debug`/`release`/`ci`.
+* `.clang-format` and `.clang-tidy` defaults — we propose: `BasedOnStyle: Google, ColumnLimit: 100, IndentWidth: 4, SortIncludes: true, AllowShortFunctionsOnASingleLine: None`; `clang-tidy: checks='clang-*,modernize-*,readability-*,performance-*,bugprone-*', WarningsAsErrors: '' in ci` — to be tweaked after first file lands.
+* `ext/README.md`: "Reserved for external CMake packages (e.g. sdl3). Do not put project sources here."
+* Wire `enable_testing()` + `include(CTest)` at top-level when `FFBIRD_BUILD_TESTS=ON`.
 
-**Tasks**
-1. Design `logger/` public header + `Sink` abstraction. Decide ADR: singleton vs instance.
-2. Implement `FileSink` (`filesystem::create_directories`, `ofstream::app`, flush per write), `ConsoleSink` (ANSI, `DetectColorSupport`), timestamp via `chrono` + `format`.
-3. Tests: level filter, two-thread 1k writes no data race (`tsan`), file sink creates parent dirs, `DetectColorSupport` w/ `TERM`/`isatty` mock.
-
-**Exit**: `ctest -R logger` passes; `Logger` can be linked by `file-util` optionally via `HAVE_LOGGER` without hard dep.
+Exit: empty `logger` etc. build as `STATIC` with one `.cpp` or `INTERFACE`; `ctest` shows 0 tests but passes.
 
 ---
 
-## Phase 2 — `file-util` (rewrite)
+## 4. Phase 1 — `logger` (first real code, thread-safe)
 
-**Goal**: file I/O with base-path root, one asset resolver. No global `FileSystem` singleton with hidden state.
+**Job**: one place to write `tag: message` with level, optional file sink. Thread-safe, no global `printf` races.
 
-*Lesson from cool* (research §§3.2, 6): cool has `FileSystem` singleton + `std::expected` `IOError` + duplicated 4-path asset logic in 3 places.
+Design (C++11, `.h` only):
 
-**Design sketch**:
-```
-file-util/include/file-util/fs.hpp
-  enum class IoError { NotFound, Denied, ... }
-  using IoResult<T> = expected<T, IoError>
-  class Fs { explicit Fs(path base); path resolve(path) const; IoResult<bytes> read_bytes(path) const; ... }
-  // No singleton. Caller owns Fs. Provide free function resolve_asset(Fs&, string_view) -> path candidates.
-```
-- `envpath-util.h` in skeleton becomes `Fs::executable_dir()` + `xdg_data_dir()` helpers. Keep them pure functions, not members.
+* `logger/include/logger/log.h` — `#ifndef LOGGER_LOG_H / #define`, `enum class Level { TRACE, DEBUG, INFO, WARN, ERROR }`, `const char* to_string(Level)`, `class Logger { public: void setMinLevel(Level); void addSink(...) maybe; bool setLogFile(const std::string& path); void log(Level, const char* tag, const char* fmt, ...) // varargs or string overload; private: Level min_; std::mutex m_; std::ofstream file_; }` + free helpers `void log_debug(...)` or macro `LOG_INFO(tag, fmt, ...)`. Decision ADR: `Logger` is **instance-based** (caller owns `Logger logger;`) plus optional `Logger::global()` accessor for shims — not a hard singleton. This keeps tests isolated.
+* `logger/src/log.cpp` — `vsnprintf` 4096B buffer, trim trailing `\r\n`, `strftime("%H:%M:%S", localtime_r)`, lock `mutex`, write to `stdout` + `file_` if open, `fflush`. Use `std::mutex` + `lock_guard`. Keep `DetectColorSupport()` if we add ANSI later, but for foundation just plain text — color is later optimization.
+* `logger/include/logger/result.h` — defines `template<typename T> struct Result { bool ok; T value; std::string error; static Result success(T); static Result failure(std::string); }` and `Result<void>` specialization. This file is **shared** so `file-util` can reuse same `Result` type. C++11 clean: no `std::expected`, no `noexcept` beyond what C++11 allows, copies are explicit.
+* Tests `logger/tests/` GTest: level filter (`setMinLevel`), concurrent 2×1000 logs (TSan if available), `setLogFile` creates parent dirs, `to_string`.
 
-**Tasks**
-1. Define `IoError` + `to_string`, `IoResult`, `Fs` class with `resolve` (prepend base if relative), `exists/is_file/is_dir`, `read_bytes/read_string/write_bytes`, `read_range`.
-2. Implement `resolve_asset` (single place): `base/filename`, `base/assets/filename`, `filename`, `base/<stripped assets/>`.
-3. Link `logger` optionally — log on `Denial` only if logger present, no hard dep.
-4. Tests: `resolve` with absolute vs relative, missing → `NotFound`, round-trip write/read, asset candidates order, `executable_dir` via `/proc/self/exe` stub.
-
-**Exit**: `file-util` can serve `AAssetManager` and `Game` without duplication.
+Deps: none. Provides `logger::logger` alias.
 
 ---
 
-## Phase 3 — `argparser` (rewrite, header-only)
+## 5. Phase 2 — `file-util` (FileUtil + EnvPathUtil, both in one lib)
 
-**Goal**: small, testable arg parsing. Not the inline loop from `cool/Source/main.cpp`.
+**Job**: small file + path helpers, reused by every later module. Thread-safe where it touches the filesystem.
 
-*Lesson*: cool parses `--data-dir`, `--log-file`, `--verbose`, `--help` inline. Rewrite makes it a leaf lib.
+Design:
 
-**Design sketch**:
-```
-argparser/include/argparser/argparser.hpp
-  struct Args { path data_dir; path log_file; bool verbose=false; bool help=false; }
-  expected<Args, string> parse(span<string_view> args)
-  string help_text(string_view prog)
-```
+* `file-util/include/file-util/file_util.h` — `#ifndef FILE_UTIL_FILE_UTIL_H`, `class FileUtil { public: static std::string getParent(const std::string& path); static bool exists(const std::string& path); static bool isDirectory(const std::string& path); static void mkdirRecursive(const std::string& path); // throws runtime_error, like mcpelauncher but via Result wrapper if we choose static bool readFile(path, std::string& out); static Result<std::string> readFile(const std::string& path); static Result<void> writeFile(const std::string& path, const std::string& data); // you asked writeFile cool — yes }`
+  * `readFile` returns `Result<std::string>` with `error` on `open`/`lseek`/`read` failure. Keep `access(F_OK)` + `stat` path similar to `mcpelauncher/file-util` but do not copy code — rewrite from `man open`.
+  * `mkdirRecursive` throws or returns `Result<void>` — we pick `Result<void>` to stay consistent with `writeFile`.
+* `file-util/include/file-util/env_path_util.h` — `class EnvPathUtil { public: static std::string getAppDir(); // readlink /proc/self/exe + dirname static std::string getWorkingDir(); // getcwd static std::string getHomeDir(); // getenv HOME or getpwuid_r static std::string getDataHome(); // XDG_DATA_HOME or ~/.local/share static bool findInPath(const std::string& what, std::string& out, const char* path=nullptr, const char* cwd=nullptr); }`
+* `file-util/src/file_util.cpp` + `env_path_util.cpp` — implement with `access`, `stat`, `mkdir`, `open/read/lseek/close`. Behind `#ifdef HAVE_LOGGER` log errors via `Logger` if target exists (like `mcpelauncher/file-util/CMakeLists.txt` already does `if(TARGET logger) target_link_libraries(file-util logger) compile_def HAVE_LOGGER`). Keep that optional link.
+* Thread safety: `readFile`/`writeFile` use local `fd`/`stat`, no shared state — thread-safe by construction. `mkdirRecursive` uses `stat` + `mkdir` loop — safe for concurrent callers (one will succeed, others see `exists`).
+* Tests: `getParent` edge (`"/a/b/"`), `exists`/`isDirectory`, `mkdirRecursive` nested, `readFile` missing → `!ok`, `writeFile` round-trip, `getAppDir` non-empty, `getDataHome` respects `XDG_DATA_HOME`.
 
-**Tasks**
-1. Header-only C++23 parser, no dep except `expected`. Support helpers for typed flags.
-2. Tests: known flags, missing value → error string, unknown flag → error, `--help` short-circuit.
+Deps: optionally `logger` (PRIVATE `HAVE_LOGGER`).
 
 ---
 
-## Phase 4 — `anticrash` (rewrite, greenfield)
+## 6. Phase 3 — `argparser` (header-only, `.h` only)
 
-**Goal**: host crash handler proving shims can survive faults. No counterpart in `cool` — greenfield.
+**Job**: parse `argc/argv` into typed values, no `printf` side effects in library (return `Result`).
 
-**Design sketch**:
-```
-anticrash/include/anticrash/handler.hpp
-  void install(path log_file); void uninstall();
-```
-- Uses `sigaction` + `sigaltstack` for `SIGSEGV/ABRT/ILL/FPE/BUS`, `backtrace` + `backtrace_symbols_fd` to file, async-signal-safe. Logger integration is optional (if logger available, also `log(Error, ...)` after signal returns via `write(2)` path).
+Design (header-only, C++11):
 
-**Tasks**
-1. Implement `install` with `SA_SIGINFO`, store old handlers, write crash log atomically.
-2. Tests: death test (`raise(SIGSEGV)` in child, check log contains `backtrace`), `uninstall` restores.
+* `argparser/include/argparser/arg.h` + `arg_parser.h` + `arg_list.h` — but all as `.h` (no `.hpp`). Provide:
+  ```cpp
+  // arg_list.h
+  class ArgList { public: ArgList(int argc, const char** argv); std::string next(); const char* nextOrNull(); bool hasNext() const; };
+  // arg_parser.h
+  class ArgParser { public: bool parse(int argc, const char** argv); void addArg(const std::string& longName, const std::string& shortName, const std::string& desc, std::function<void(ArgList&)> handler); void printHelp() const; };
+  // arg.h
+  template<typename T> class Arg { public: Arg(ArgParser& p, const std::string& longName, const std::string& shortName, const std::string& desc, const T& def = T()); const T& get() const; operator const T&() const; private: T value_; };
+  // free handleValue overloads for string/int/float/bool/vector
+  ```
+  Keep the `mcpelauncher/arg-parser` seam idea (template `arg<T>` + handler map) because you said header-only is better, but **do not assume** same short-name handling — we design our own help text format and error return. For rewrite we return `Result<void>` from `parse` instead of `bool + printf("Unknown argument")` — but keep `printHelp` for `--help`.
+* Tests: `Arg<string>` with `--data-dir foo`, `Arg<bool>` with `true/on/yes`, missing value → `!ok`, unknown arg → error, `--help` triggers `printHelp`.
 
----
-
-## Phase 5 — `platform` (rewrite, new `platform/` lib)
-
-**Goal**: OS abstraction with explicit window ownership.
-
-*Lesson from cool* (research §4): `_cool` minimal vs `_old` windowing drift + missing `GetWindow()` in header. Rewrite makes ownership explicit.
-
-**Design sketch**:
-```
-platform/include/platform/window.hpp
-  class Window { static expected<Window, string> create(int w,int h, string title); void show(); SDL_Window* native() const; }
-platform/include/platform/platform.hpp
-  expected<void,string> init(); void shutdown(); string name();
-```
-
-**Tasks**
-1. `Platform` init: `SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_GAMEPAD)`, `init` fails if already initialized (second call → error). `shutdown` idempotent.
-2. `Window` owns `SDL_Window*`; creation is `Window::create(720,1280)`, not hidden global. `ANativeWindow` bridging will take `Window::native()`.
-3. Stub path when SDL3 absent (no hard require at configure).
-4. Tests: double init → error, `native()` non-null post-create, stub when SDL missing.
-
-**Note**: skeleton has no `platform/` today — create it. `client` will depend on it.
+Deps: none (INTERFACE).
 
 ---
 
-## Phase 6 — `runtime` (rewrite, `runtime/` lib)
+## 7. Phase 4 — `anticrash` (host crash handler)
 
-**Goal**: native lib loading as a deep module, no hidden `Platform::Initialize` coupling.
+**Job**: catch host `SIGSEGV/ABRT/FPE/BUS/ILL`, dump stack, never deadlock.
 
-*Lesson from cool* (research §5): cool's `Runtime::Initialize` auto-calls `Platform::Initialize` + checks `data_dir` existence + loads lib. Mixes concerns. Rewrite separates: `Remaps checks?` → Caller decides.
+Design:
 
-**Design sketch**:
-```
-runtime/include/runtime/loader.hpp
-  class Lib { static expected<Lib,string> open(path); void* sym(string_view) const; expected<void*, string> find(string_view) const; }
-runtime/include/runtime/runtime.hpp
-  struct Config { path data_dir; path lib_path; }
-  expected<void,string> validate(Config) // checks existence, no side effects
-```
+* `anticrash/include/anticrash/handler.h` — `#ifndef ANTICRASH_HANDLER_H`, `namespace anticrash { bool install(const std::string& logFile); void uninstall(); }`
+* `anticrash/src/handler.cpp` — `sigaction` with `SA_SIGINFO` or plain `sa_handler`, `backtrace` 25 + `backtrace_symbols`, `abi::__cxa_demangle`, `linker::dladdr`-style fallback if we later have linker — for now just `dladdr` (host). Detached 1-second hung guard thread like `mcpelauncher-core/crash_handler.cpp`. `_Exit(signal)` after dump. Store old handlers to restore in `uninstall`. `hasCrashed` `std::atomic<bool>`.
+* Thread safety: `install` is called once at startup; handler is async-signal-safe only via `write(2)` + `backtrace` (which is not strictly async-safe but matches upstream) — we document the trade-off.
+* Tests: death test — fork child, `install`, `raise(SIGSEGV)`, check log contains `Backtrace`.
 
-**Tasks**
-1. `Lib::open` uses `dlopen(RTLD_NOW)` + `dlerror` → `string` error via `format`; move-only; `find` returns `expected`.
-2. `validate` pure function; loading is caller's job (keeps `runtime` independent of `Platform`).
-3. Tests: open missing → error, `find("")` → error, `find` on missing symbol → error, move semantics.
+Deps: `logger` optional, `CMAKE_DL_LIBS` if we use `dladdr`.
 
 ---
 
-## Phase 7 — `runtime/android` compat (rewrite, host side)
+## 8. Phase 5 — Stubs (every undecided module is an empty build + Linux guard)
 
-**Goal**: host structs that satisfy Bionic ABI truths, designed as thin value types + factory functions, not singletons.
+**Goal**: prove the module layout without implementing runtime.
 
-*Lessons* (research §6): 7 structs, exact sizes (`AConfiguration 64`, `android_app 0x130`, callbacks 16 ptrs), 4-path asset, `poll` looper. Cool duplicates structs between host and shim to avoid NDK clash — keep duplication explicit.
+For each `platform-linux/`, `runtime-linux/`, `libc-shim/`, `libgles-shim/`, `libegl-shim/`, `game/`:
 
-**Order (rewrite from scratch, size assertions first)**:
-1. `a_configuration.hpp` — `struct AConfig { ... }` 64B + `make_config()` + `from_asset_mgr`.
-2. `a_asset.hpp` — `struct Asset { vector<uint8_t> bytes; size_t off; string name; }` + `AssetManager { Fs fs; }` + `open_asset(AssetManager, filename)` using `file-util::resolve_asset`.
-3. `a_window.hpp` — `struct NativeWindow { int32_t w,h,fmt,refs; SDL_Window* host; }` + `make_window`.
-4. `a_activity.hpp` — `struct Callbacks { 16 fn ptrs }` + `struct Activity { Callbacks* cb; ... instance; assetManager; }` + `make_activity`.
-5. `a_looper.hpp` — `struct Looper { vector<pollfd> ... }` + `prepare/add/remove/poll`.
-6. `a_input.hpp` — `InputQueue` + `InputEvent` stubs.
-7. `app_glue.hpp` — `android_app` 304B + `APP_CMD_*`, `LOOPER_ID_*`.
+* `CMakeLists.txt` → `add_library(<name> STATIC src/stub.cpp) PUBLIC include/` with `if(NOT LINUX) message(FATAL_ERROR)` or header `#error "requires Linux"` (see Phase 5.1).
+* `include/<module>/stub.h` — single header with `#ifndef ... / #error "platform-linux requires Linux"` + empty namespace + comment `// TODO: implemented in later phase`.
+* `src/stub.cpp` — one empty translation unit so `add_library` is not `INTERFACE` where we want a real archive later.
+* Example `platform-linux/include/platform_linux/platform.h`:
+  ```cpp
+  #ifndef PLATFORM_LINUX_PLATFORM_H
+  #define PLATFORM_LINUX_PLATFORM_H
+  #ifndef __linux__
+  #error "platform-linux requires Linux"
+  #endif
+  namespace platform { // empty stub
+  }
+  #endif
+  ```
+* Same for `runtime-linux`, `libc-shim` etc. — top-level names stay `platform-linux`, `runtime-linux`, `libc-shim` (not `platform/linux`).
 
-**Tasks per file**: header with `static_assert`, factory (`make_*` / `create_*`), no global. Tests for `sizeof`, asset open/close round-trip against temp dir, looper poll with pipe fd, `android_app` size.
-
----
-
-## Phase 8 — `shims` (rewrite, `runtime/shims/`)
-
-**Goal**: Bionic `DT_NEEDED` libs with correct SONAMEs, designed as forwarding shims with `version-script` contract tested by `readelf`.
-
-*Lesson* (research §7): `add_bionic_shim` pattern (SHARED, `PREFIX lib`, `SOVERSION ""`, `hidden`, `RPATH $ORIGIN`, `_GNU_SOURCE`) + 8 shims. Rewrite re-derives version scripts from `nm -D libflappybird.so` expected imports, not from copying `cool/Lib*.version`.
-
-**Tasks**
-1. Fresh `add_bionic_shim` helper in `runtime/shims/CMakeLists.txt`.
-2. Each shim rewritten:
-   - `log` → forwards `__android_log_print` to `logger::Logger` (global instance if chosen).
-   - `android` → `AAssetManager_open` etc. using `file-util` resolver; keep structs local to avoid host header clash.
-   - `egl`/`glesv2` → `dlopen` host `libEGL.so.1` / `libGLESv2.so.2` once via `call_once`, per-symbol `dlsym`.
-   - `opensles` → stub `SL_IID_*` + `slCreateEngine` success.
-   - `c/m/dl` → forward to host `libc.so.6`/`libm.so.6`/`libdl.so.2` with `.symver`.
-3. For each: hand-written `LibXXX.version` listing only exported symbols; test via `readelf --dyn-syms` expects exactly those.
-4. Aggregate `shims` target.
-
-**Exit**: `nm -D build/shims/liblog.so | grep __android_log_print` shows `T`; `ldd` on dummy Bionic binary finds `libandroid.so`.
+Tests: CTest checks that `cmake --build` succeeds and `nm -D` would later show symbols — for now just that the stub builds.
 
 ---
 
-## Phase 9 — `game` bridge (rewrite, `game/` or `client/game/`)
+## 9. Phase 6 — `natives/print_test` (separate NDK project, called from top-level)
 
-**Goal**: drive `libflappybird.so` lifecycle P0→P1 with explicit state machine, not scattered `if (callbacks)`.
+**Goal**: `ffbird` top CMake can trigger NDK build of `libprint_test.so` without coupling host build to NDK.
 
-*Lesson* (research §8): cool's `FlappyBirdGame` loads `ANativeActivity_onCreate`, calls it, waits 50×20ms for `instance`, fallback `g_App`, then `onNativeWindowCreated`. Logic is correct but state is hidden bool.
+Tasks:
 
-**Design sketch**:
-```
-game/include/game/game.hpp
-  enum class State { Unloaded, LibLoaded, Created, Windowed, Focused }
-  struct Config { path data_dir; path lib; int winW, winH; SDL_Window* host; }
-  class Game { expected<void,string> create(Config); expected<void,string> create_window(); void poll(int timeoutMs); State state() const; }
-```
+* `natives/CMakeLists.txt` (separate project) — `cmake_minimum_required(VERSION 3.8)` (because we use `ANDROID_ABI` vars), `project(natives)`, `add_library(print_test SHARED print_test/print_test.cpp)` with `target_link_libraries(print_test log)` (NDK `liblog`). Header: one `extern "C" void print_test_hello();` that does `__android_log_print(ANDROID_LOG_INFO, "print_test", "hello")`.
+* `natives/print_test/print_test.cpp` — `#include <android/log.h>`, `extern "C" void print_test_hello() { __android_log_print(ANDROID_LOG_INFO, "print_test", "hello"); }`
+* `natives/print_test/CMakeLists.txt` — delegates to parent or stands alone with `find_library(log-lib log)`.
+* Top-level `ffbird/CMakeLists.txt` calls natives via:
+  ```cmake
+  option(FFBIRD_BUILD_NATIVES "Build natives with NDK" OFF)
+  if(FFBIRD_BUILD_NATIVES)
+    if(NOT DEFINED ANDROID_NDK)
+      set(ANDROID_NDK "/home/clickpaw/Android/Sdk/ndk/30.0.16138531")
+    endif()
+    add_subdirectory(natives ${CMAKE_BINARY_DIR}/natives_build
+      CMAKE_ARGS -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-21)
+  endif()
+  ```
+  Or simpler: `add_custom_target(natives_print_test COMMAND ${ANDROID_NDK}/.../cmake ...)` — we pick `ExternalProject_Add` if `ANDROID_ABI` varies.
+* Host test later (not in this foundations plan) will `dlopen` the built `libprint_test.so` — but that test lives in `runtime-linux` Phase when `NativeLoader` exists. For now natives just need to **build**.
 
-**Tasks**
-1. `Fs` + `Loader::Lib` reuse; `Activity` via compat factory; call `ANativeActivity_onCreate`; wait with `chrono` for `instance`; fallback `sym("g_App")`.
-2. Single `resolve_asset` call path.
-3. Tests: state transitions, mock lib (build tiny `libmock.so` exporting `ANativeActivity_onCreate` that writes `instance`).
+Discovery (fact): NDK is at `/home/clickpaw/Android/Sdk/ndk/30.0.16138531` (r30-beta3), `android.toolchain.cmake` at `build/cmake/android.toolchain.cmake`, `aarch64-linux-android21-clang` etc. in `toolchains/llvm/prebuilt/linux-x86_64/bin`, platform `android-37.0` available. We will default to `ANDROID_ABI arm64-v8a` + `ANDROID_PLATFORM android-21` (minimum for `__android_log_print`).
 
----
-
-## Phase 10 — `client` entrypoint (rewrite)
-
-**Goal**: thin `main.cpp` that composes leaves, no business logic.
-
-**Design sketch** (~60 lines):
-```
-parse args → Fs base → Logger setup → Platform::init → Window::create → Runtime::validate → Game::create → Game::create_window → loop (poll + render) → shutdown
-```
-
-**Tasks**
-1. Use `argparser::parse`, `file-util::Fs`, `platform::Window`, `runtime::Lib`, `game::Game`.
-2. `CMakeLists.txt` links `logger file-util argparser platform runtime android_compat game shims`, plus `Threads`, `SDL3` if found, `OpenGL` optional; `copy_to_root` post-build.
-3. Add `ext/` handling for optional `libjnivm` if still needed (decide via ADR — not required for Flappy Bird, may drop).
-
-**Exit**: `./build/debug/flbird --help` → help text; `--data-dir Assets` → `[P0]` logs.
+Exit: `cmake -DFFBIRD_BUILD_NATIVES=ON -DANDROID_ABI=arm64-v8a .. && cmake --build . --target print_test` produces `libprint_test.so` under `build/natives_build/`.
 
 ---
 
-## Phase 11 — polish & quality
+## 10. Testing, formatting, quality
 
-- `ctest --preset debug`, `ci` with `-Werror`, `tsan`/`asan` in debug.
-- Benchmarks for `file-util` resolver if hot path.
-- Docs: `README.md` build table + layout diagram (no copy from cool).
-- `install` rules via `GNUInstallDirs`, export set.
+* Every non-stub module has `tests/` with GTest (`find_package(GTest)` when `FFBIRD_BUILD_TESTS=ON`). Host tests run via `ctest --preset debug`.
+* Natives have no GTest — they are validated by host `dlopen` test in a later milestone (not this plan).
+* `ext/README.md` stays.
+* CI preset `ci` sets `FFBIRD_WERROR=ON` → `flbird_enable_warnings` adds `-Werror`.
+* No proprietary blobs in repo: `Assets/` and `APKs/` are `.gitignored`, natives are built from source.
 
 ---
 
-## Edges
+## 11. Dependency edges (foundations only)
 
 ```
-0 → 1
-1 → 2 (optional dep)
-1 → 3, 4
-1,2 → 5
-5 → 6
-6 → 7
-7 → 8 & 9 (8 and 9 can parallelize after 7)
-7,8,9 → 10
-10 → 11
+Phase0 (build) ─┬─→ logger ─┬─→ file-util ──→ anticrash? (optional log)
+                ├─→ argparser (leaf)
+                ├─→ anticrash (leaf)
+                ├─→ ext (no code)
+                └─→ stubs (platform-linux, runtime-linux, libc-shim, game) — all depend on Phase0 only
+Phase0 ─→ natives/print_test (separate toolchain, no host dep)
 ```
 
----
-
-## ADRs to record (during grill)
-
-- Error model: `std::expected` only.
-- Logger: instance vs singleton.
-- Fs: value type with base path vs global.
-- Module split: keep `logger`/`file-util` separate (skeleton) vs reunify?
-- Window ownership: `Window` class vs global `Platform::GetWindow()`.
-- `ext/libjnivm`: keep or drop for Flappy Bird.
-- Shim struct duplication vs shared `abi/` header.
+Later phases (not this plan) will wire `platform-linux → runtime-linux → libc-shim → game → natives` when we design the loader.
 
 ---
 
-## Next action
+## 12. Next action after this plan
 
-1. Commit this rewritten plan.
-2. `grill-with-docs` to lock ADRs above and write `CONTEXT.md`.
-3. `to-spec` → `to-tickets` from this plan, each ticket declaring edges, starting at Phase 0.
+1. `git add docs/plan/Plan.md` + `git commit` (this file).
+2. Run `to-spec` on this plan if you want `spec.md`, else `to-tickets` directly — tickets under `.scratch/<feature>/issues/` or GitHub issues, starting at Phase 0 and following edges (lowest blocking count first).
+3. Implement with TDD per ticket, then `code-review` (Standards: `.h` only, C++11, thread-safe; Spec: `Result<T>`, small modules, Linux-only guard).
 
