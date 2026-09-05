@@ -11,6 +11,10 @@ find_package(Threads REQUIRED)
 add_library(logger STATIC include/logger/log.h include/logger/result.h src/log.cpp)
 target_include_directories(logger PUBLIC include/)
 target_link_libraries(logger PUBLIC Threads::Threads)
+# Result<T> lives in utils; logger re-exports it for backward compat
+if(TARGET utils)
+    target_link_libraries(logger PUBLIC utils)
+endif()
 set_target_properties(logger PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 
 # Warnings

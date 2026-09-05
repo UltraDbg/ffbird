@@ -15,8 +15,11 @@ add_library(file-util STATIC
 target_include_directories(file-util PUBLIC include/)
 set_target_properties(file-util PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 
+if(TARGET utils)
+    target_link_libraries(file-util PUBLIC utils)
+endif()
 if(TARGET logger)
-    target_link_libraries(file-util PUBLIC logger)
+    target_link_libraries(file-util PRIVATE logger)
     target_compile_definitions(file-util PRIVATE HAVE_LOGGER)
 endif()
 

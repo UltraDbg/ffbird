@@ -6,7 +6,7 @@
 #endif
 
 #include "argparser/arg_list.h"
-#include "logger/result.h"
+#include "utils/result.h"
 
 #include <functional>
 #include <string>
@@ -44,7 +44,7 @@ public:
         helpEntries_.push_back(e);
     }
 
-    logger::Result<void> parse(int argc, const char** argv) {
+    utils::Result<void> parse(int argc, const char** argv) {
         ArgList list(argc, argv);
         // skip program name
         if (list.hasNext()) {
@@ -58,19 +58,19 @@ public:
             }
             auto it = handlers_.find(token);
             if (it == handlers_.end()) {
-                return logger::Result<void>::failure("Unknown argument: " + token);
+                return utils::Result<void>::failure("Unknown argument: " + token);
             }
             try {
                 it->second(list);
             } catch (const std::invalid_argument& ex) {
-                return logger::Result<void>::failure(ex.what());
+                return utils::Result<void>::failure(ex.what());
             } catch (const std::exception& ex) {
-                return logger::Result<void>::failure(ex.what());
+                return utils::Result<void>::failure(ex.what());
             } catch (...) {
-                return logger::Result<void>::failure("Unknown error handling argument: " + token);
+                return utils::Result<void>::failure("Unknown error handling argument: " + token);
             }
         }
-        return logger::Result<void>::success();
+        return utils::Result<void>::success();
     }
 
     void printHelp() const {
