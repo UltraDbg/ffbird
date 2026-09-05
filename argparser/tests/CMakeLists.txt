@@ -26,6 +26,18 @@ else()
         add_executable(argparser_tests test_argparser.cpp)
         target_link_libraries(argparser_tests PRIVATE argparser logger ${GTEST_LIB} ${GTEST_MAIN_LIB} pthread)
         add_test(NAME argparser_tests COMMAND argparser_tests)
+
+# Tests binaries go to /tests
+set_target_properties(argparser_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/tests
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
         return()
     else()
         message(WARNING "GTest not found — skipping argparser tests")
@@ -46,3 +58,15 @@ if(GTEST_MAIN_TARGET)
     target_link_libraries(argparser_tests PRIVATE ${GTEST_MAIN_TARGET})
 endif()
 add_test(NAME argparser_tests COMMAND argparser_tests)
+
+# Tests binaries go to /tests
+set_target_properties(argparser_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/tests
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+

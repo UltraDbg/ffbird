@@ -26,6 +26,18 @@ else()
         add_executable(anticrash_tests test_anticrash.cpp)
         target_link_libraries(anticrash_tests PRIVATE anticrash ${GTEST_LIB} ${GTEST_MAIN_LIB} pthread dl)
         add_test(NAME anticrash_tests COMMAND anticrash_tests)
+
+# Tests binaries go to /tests
+set_target_properties(anticrash_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/tests
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
         return()
     else()
         message(WARNING "GTest not found — skipping anticrash tests")
@@ -51,3 +63,15 @@ if(DL_LIB)
     target_link_libraries(anticrash_tests PRIVATE ${DL_LIB})
 endif()
 add_test(NAME anticrash_tests COMMAND anticrash_tests)
+
+# Tests binaries go to /tests
+set_target_properties(anticrash_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/tests
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
