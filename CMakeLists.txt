@@ -119,6 +119,10 @@ add_subdirectory(logger)
 add_subdirectory(file-util)
 add_subdirectory(argparser)
 add_subdirectory(anticrash)
+add_subdirectory(ulinker)
+add_subdirectory(hybris-bridge)
+add_subdirectory(bionic-libm)
+add_subdirectory(shims/liblog-shim)
 
 # Stubs — each proves module layout on Linux
 if(EXISTS "${CMAKE_SOURCE_DIR}/platform-linux/CMakeLists.txt")
